@@ -84,29 +84,18 @@ function alignData_OpeningFcn(hObject, eventdata, handles, varargin)
     [folderName,fileName,extension] = fileparts(varargin{1});
     if strcmp(extension,'.txt')
       handles = read_bh_file(handles,varargin{1});
-      handles = run_methods(handles);
+      
     else
-      disp('its a folder - get sessions etc...')
       set(handles.button_load,'string','Next session')
       
-%        pathcat(varargin{1},'Session*')
-      
       folders = dir(pathcat(varargin{1},'Session*'));
-%        folders = {folders.name};
       
-%        filtered_folders_idx = find(~cellfun('isempty',regexp(folders,'Session','match')));
+      bhfile=dir(pathcat(varargin{1},folders(1).name,'aa*.txt'));
+      pathcat(varargin{1},folders(1).name,bhfile.name)
       
-      for s = 1:length(folders)
-%          pathSession = pathcat(folders(s));
-%          folders(s)
-        bhfile=dir(pathcat(varargin{1},folders(s).name,'aa*.txt'));
-        pathcat(varargin{1},folders(s).name,bhfile.name)
-        
-        handles = read_bh_file(handles,pathcat(varargin{1},folders(s).name,bhfile.name));
-        handles = run_methods(handles);
-%  %        for s in nSes
-%  %          loop through data until end and align all
-      end
+      handles = read_bh_file(handles,pathcat(varargin{1},folders(1).name,bhfile.name));
+      
+      handles = run_methods(handles);
     end
     
   end
