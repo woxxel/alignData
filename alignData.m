@@ -14,8 +14,8 @@
 
 
 
-function varargout = pos_speed_align(varargin)
-% POS_SPEED_ALIGN MATLAB code for pos_speed_align.fig
+function varargout = alignData(varargin)
+% POS_SPEED_ALIGN MATLAB code for alignData.fig
 %      POS_SPEED_ALIGN, by itself, creates a new POS_SPEED_ALIGN or raises the existing
 %      singleton*.
 %
@@ -27,25 +27,25 @@ function varargout = pos_speed_align(varargin)
 %
 %      POS_SPEED_ALIGN('Property','Value',...) creates a new POS_SPEED_ALIGN or raises the
 %      existing singleton*.  Starting from the left, property value pairs are
-%      applied to the GUI before pos_speed_align_OpeningFcn gets called.  An
+%      applied to the GUI before alignData_OpeningFcn gets called.  An
 %      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to pos_speed_align_OpeningFcn via varargin.
+%      stop.  All inputs are passed to alignData_OpeningFcn via varargin.
 %
 %      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
 %      instance to run (singleton)".
 %
 % See also: GUIDE, GUIDATA, GUIHANDLES
 
-% Edit the above text to modify the response to help pos_speed_align
+% Edit the above text to modify the response to help alignData
 
-% Last Modified by GUIDE v2.5 23-Jul-2018 18:55:37
+% Last Modified by GUIDE v2.5 25-Jul-2018 13:56:27
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 0;
 gui_State = struct('gui_Name',       mfilename, ...
                    'gui_Singleton',  gui_Singleton, ...
-                   'gui_OpeningFcn', @pos_speed_align_OpeningFcn, ...
-                   'gui_OutputFcn',  @pos_speed_align_OutputFcn, ...
+                   'gui_OpeningFcn', @alignData_OpeningFcn, ...
+                   'gui_OutputFcn',  @alignData_OutputFcn, ...
                    'gui_LayoutFcn',  [] , ...
                    'gui_Callback',   []);
 if nargin && ischar(varargin{1})
@@ -60,43 +60,168 @@ end
 % End initialization code - DO NOT EDIT
 
 
-% --- Executes just before pos_speed_align is made visible.
-function pos_speed_align_OpeningFcn(hObject, eventdata, handles, varargin)
+% --- Executes just before alignData is made visible.
+function alignData_OpeningFcn(hObject, eventdata, handles, varargin)
 % This function has no output args, see OutputFcn.
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-% varargin   command line arguments to pos_speed_align (see VARARGIN)
-
+% varargin   command line arguments to alignData (see VARARGIN)
+  
   handles.status = 0;
-  
   handles.data = struct;
-  handles.data.bh = getappdata(0,'behavior_data');
-  handles.paras = getappdata(0,'parameter');
   
-  handles.data.speed = handles.data.bh.speed(1:handles.data.bh.datapoints);
-  handles.data.time = handles.data.bh.time(1:handles.data.bh.datapoints);
-  handles.data.duration = handles.data.time(end);
+  assert(nargin<=4,'Too many inputs provided. Call alignData with a mouse folder- or file-name, or without any input!')
   
-  handles = smooth_data(handles);
-  guidata(hObject,handles);
+  if nargin == 4   %% if GUI is called with input
+    
+    set(handles.button_load,'enable','off')
+    %% check if input is string
+    assert(isstr(varargin{1}),'Provide input as a string of the data path')
+    
+    handles = set_paras(handles);
+    
+    [folderName,fileName,extension] = fileparts(varargin{1});
+    if strcmp(extension,'.txt')
+      handles = read_bh_file(handles,varargin{1});
+      handles = run_methods(handles);
+    else
+      disp('its a folder - get sessions etc...')
+      set(handles.button_load,'string','Next session')
+      
+%        pathcat(varargin{1},'Session*')
+      
+      folders = dir(pathcat(varargin{1},'Session*'));
+%        folders = {folders.name};
+      
+%        filtered_folders_idx = find(~cellfun('isempty',regexp(folders,'Session','match')));
+      
+      for s = 1:length(folders)
+%          pathSession = pathcat(folders(s));
+%          folders(s)
+        bhfile=dir(pathcat(varargin{1},folders(s).name,'aa*.txt'));
+        pathcat(varargin{1},folders(s).name,bhfile.name)
+        
+        handles = read_bh_file(handles,pathcat(varargin{1},folders(s).name,bhfile.name));
+        handles = run_methods(handles);
+%  %        for s in nSes
+%  %          loop through data until end and align all
+      end
+    end
+    
+  end
   
-  handles = run_align(handles);
-  guidata(hObject,handles);
-  
-  handles = plot_align(handles);
-  guidata(hObject,handles);
-  
-  
-  % Choose default command line output for pos_speed_align
+  % Choose default command line output for alignData
   handles.output = hObject;
 
   % Update handles structure
   guidata(hObject, handles);
 
-% UIWAIT makes pos_speed_align wait for user response (see UIRESUME)
+% UIWAIT makes alignData wait for user response (see UIRESUME)
 % uiwait(handles.alignData);
 
+
+function h = set_paras(h)
+  
+  h.paras = struct;    %% maybe outside?
+  h.paras.f = 15;                 %% Hz frame rate of sampling
+  
+  %% information about data structure in behaviour files
+  %%% maybe add string to search for in here
+  h.paras.startframe = 1;
+  h.paras.nframe = 8989;
+  
+  %% structure of txt-file -> dynamic?
+  h.paras.col_t = 1;
+  h.paras.col_speed = 2;
+  h.paras.col_frame = 4;
+  h.paras.col_pos = 6;
+  h.paras.col_TTL = 8;   %% -> dynamic
+  
+  %% procession of behavioural data
+  h.paras.runthres=0.5;                            %% threshold to define active / inactive periods (cm/sec)
+  h.paras.lr_min = 30;                             %% number of minimal frames considered to be a "long run"-event
+  h.paras.nbin=80;                                 %% number of divisions of the linear track
+  
+  h.paras.cols = 8;
+  
+  
+  h.paras.totallength = str2double(get(h.entry_tracklength,'string'));
+  h.paras.pos_offset = h.paras.totallength%% get from minimum of data -> subtract
+  
+  h.paras.binwidth = h.paras.totallength/h.paras.nbin;
+
+
+function h = read_bh_file(h,pathBH)
+  
+  delimiter = sprintf('\t',''); %or whatever
+  fid = fopen(pathBH,'r');
+  fgets(fid);
+  tLines = fgets(fid);
+  numCols = numel(strfind(tLines,delimiter));
+%    fclose(fid);
+  disp('number of columns:')
+  numCols
+  whole_data=fscanf(fid, '%f', [numCols, inf]);
+  fclose(fid);
+  
+  %%% check, whether frame numbers are present and whether they are in sync
+  data_frame  = whole_data(h.paras.col_frame,:);     % frame number
+  sync_sum    = sum(data_frame);
+  sync_last   = data_frame(end);
+  
+  data_TTL    = whole_data(h.paras.col_TTL,:);       % microscope TTL
+  
+  if sync_sum~=0 & h.paras.nframe==sync_last
+      
+      idx_start=find(data_frame==h.paras.startframe,1,'first');
+      idx_end=find(data_frame==h.paras.nframe-1,1,'last')+3;
+      
+  elseif  sync_sum==0 | h.paras.nframe~=sync_last
+      
+      idx_start=find(data_TTL<0.5,1,'first');% find the first point or low TTL    
+      diffsig=diff(data_TTL);
+      idx_end=find(diffsig > 0.5,1,'last');% find the last point or high TTL
+            
+      if sync_sum==0
+              disp('WARNING --- Sync signal is missing')
+      elseif h.paras.nframe~=sync_last
+              disp('WARNING --- Frame number mismatch')
+      end
+  end
+  
+  datapoints = idx_end-idx_start+1;
+  %% if needed, reassign frame numbers
+  if  sync_sum==0 | h.paras.nframe~=sync_last
+    datapoints_per_frame  = datapoints/h.paras.nframe; 
+    frame_num = ceil((1:datapoints)/datapoints_per_frame);
+    disp('New frame numbers assigned')
+  else
+    frame_num = whole_data(h.paras.col_frame,idx_start:idx_end);
+  end
+  
+  %% raw data
+  h.data.bh.datapoints = datapoints;
+  h.data.bh.time = whole_data(h.paras.col_t,idx_start:end)-whole_data(h.paras.col_t,idx_start);       % offset corrected
+  h.data.bh.speed = whole_data(h.paras.col_speed,idx_start:end);
+  h.data.bh.pos = whole_data(h.paras.col_pos,idx_start:end) + h.paras.pos_offset;
+  
+  %% cropped, aligned data
+  h.data.time = h.data.bh.time(1:h.data.bh.datapoints);
+  h.data.duration = h.data.time(end);
+  h.data.speed = h.data.bh.speed(1:h.data.bh.datapoints);
+%    h.data.pos = 
+  
+  
+  
+  
+function h = run_methods(h)
+  
+  h = smooth_data(h);
+  h = run_align(h);
+  h = plot_align(h);
+  
+  
 
 function h = smooth_data(h)
   
@@ -284,7 +409,7 @@ function update_plot(h)
   
 
 % --- Outputs from this function are returned to the command line.
-function varargout = pos_speed_align_OutputFcn(hObject, eventdata, handles) 
+function varargout = alignData_OutputFcn(hObject, eventdata, handles) 
 % varargout  cell array for returning output args (see VARARGOUT);
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -352,12 +477,13 @@ function button_save_Callback(hObject, eventdata, handles)
   
   delete(gcf)
 
-% --- Executes on button press in button_cancel.
-function button_cancel_Callback(hObject, eventdata, handles)
-% hObject    handle to button_cancel (see GCBO)
+% --- Executes on button press in button_load.
+function button_load_Callback(hObject, eventdata, handles)
+% hObject    handle to button_load (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-
+  
+  %% 
 
 
 function entry_smooth_Callback(hObject, eventdata, handles)
@@ -390,3 +516,26 @@ function alignData_CloseRequestFcn(hObject, eventdata, handles)
 
 % Hint: delete(hObject) closes the figure
 delete(hObject);
+
+
+
+function entry_tracklength_Callback(hObject, eventdata, handles)
+% hObject    handle to entry_tracklength (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of entry_tracklength as text
+%        str2double(get(hObject,'String')) returns contents of entry_tracklength as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function entry_tracklength_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to entry_tracklength (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end

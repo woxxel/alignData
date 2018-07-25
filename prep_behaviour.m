@@ -29,8 +29,9 @@ function [bh] = prep_behaviour(para,pathMouse,loadData)
     
     % load data
     pathSession = pathcat(pathMouse,sprintf('Session%02d',s));
-    bhfile=dir(pathcat(pathSession,'*.txt'));
+    bhfile=dir(pathcat(pathSession,'aa*.txt'));
     pathBH = pathcat(pathSession,bhfile.name);
+    
     bh(s) = read_BH_file(bh(s),pathBH,para);              % reading and processing behaviour data
     bh(s).binpos = min(floor(bh(s).position/para.binwidth)+1,para.nbin);
     
@@ -57,38 +58,6 @@ function [bh] = prep_behaviour(para,pathMouse,loadData)
         end
       end
     end
-    
-    
-    
-%      if plt
-%        close all
-%        figure('position',[100 100 1500 700])
-%        ymax = ceil(max(bh(s).speed));
-%        
-%        yyaxis left
-%        hold on
-%        bar(bh(s).time,bh(s).longrunperiod*ymax,1,'FaceColor',[0.8 0.8 0.8])
-%        plot(bh(s).time,bh(s).position*ymax/para.totallength,'b')
-%        plot([0,bh(s).duration],[60,60]*ymax/para.nbin,'r--','LineWidth',2)
-%        plot([0,bh(s).duration],[20,20]*ymax/para.nbin,'g--','LineWidth',2)
-%        hold off
-%        ylim([-ymax ymax])
-%        yticks([0,ymax])
-%        yticklabels([0,1])
-%        ylabel('Position')
-%        
-%        yyaxis right
-%        plot(bh(s).time,-bh(s).speed,'r')
-%        ylim([-ymax ymax])
-%        yticks([-ymax,0])
-%        yticklabels([-ymax,0])
-%        ylabel('velocity [cm/s]')
-%        xlabel('time [s]')
-%        
-%  %        pathName = pathcat(pathMouse,sprintf('behavior_%02d.png',s));
-%  %        print(pathName,'-dpng','-r600')
-%        waitforbuttonpress;
-%      end
     
     crop_behavior = bh(s);
     save(pathSaveSes,'crop_behavior','-v7.3')
@@ -166,7 +135,6 @@ function [bh] = read_BH_file(bh,pathBH,para)
     frame_num = whole_data(para.col_frame,idx_start:idx_end);
   end
   
-%    whole_data(para.col_t,1:100)
   %%% read remaining data from file
   bh_raw = struct;
   bh_raw.datapoints = datapoints;
