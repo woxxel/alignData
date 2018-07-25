@@ -48,17 +48,6 @@ function [bh] = prep_behaviour(para,pathMouse,loadData)
     bh(s).norm_dwelltime = bh(s).dwelltime/sum(bh(s).dwelltime);
     
     
-    if strcmp(para.mode,'regress')
-      binpos = min(floor(bh(s).position/para.binwidth)+1,para.nbin);
-      bh(s).place_vectors = zeros(para.nbin,para.nframe);
-      for i = 1:length(binpos)
-        if bh(s).longrunperiod(i)
-          bh(s).place_vectors(binpos(i),i) = 1;
-        end
-      end
-    end
-    
-    
     
 %      if plt
 %        close all
