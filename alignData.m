@@ -6,12 +6,8 @@
 %% written 24.07.2018 by A. Schmidt
 %%
 %% TODOs:
-%% - make loading possible from GUI itself
-%% - make program independent from other methods
 %% - give estimate, when data seems to be alright (from overall number of alignment points?
-%% - make more descriptive?
-%% - automatically find number of columns in text-file
-
+%% - add button to save figure / image
 
 
 function varargout = alignData(varargin)
@@ -38,7 +34,7 @@ function varargout = alignData(varargin)
 
 % Edit the above text to modify the response to help alignData
 
-% Last Modified by GUIDE v2.5 25-Jul-2018 13:56:27
+% Last Modified by GUIDE v2.5 25-Jul-2018 17:20:57
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 0;
@@ -61,53 +57,59 @@ end
 
 
 % --- Executes just before alignData is made visible.
-function alignData_OpeningFcn(hObject, eventdata, handles, varargin)
+function alignData_OpeningFcn(hObject, eventdata, h, varargin)
 % This function has no output args, see OutputFcn.
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 % varargin   command line arguments to alignData (see VARARGIN)
   
-  handles.status = 0;
-  handles.data = struct;
+  h.save_status = false;
+  h.data = struct;
   
   assert(nargin<=4,'Too many inputs provided. Call alignData with a mouse folder- or file-name, or without any input!')
   
+  h = set_paras(h);
+  
   if nargin == 4   %% if GUI is called with input
     
-    set(handles.button_load,'enable','off')
     %% check if input is string
-    assert(isstr(varargin{1}),'Provide input as a string of the data path')
+    h.pathIn = varargin{1};
+    assert(isstr(h.pathIn),'Provide input as a string of the data path')
     
-    handles = set_paras(handles);
+    h.currSession = 1;
     
-    [folderName,fileName,extension] = fileparts(varargin{1});
+    [folderName,fileName,extension] = fileparts(h.pathIn);
     if strcmp(extension,'.txt')
-      handles = read_bh_file(handles,varargin{1});
-      
+      h.pathSession = folderName;
+      h = read_bh_file(h,h.pathIn);
+      h.nSessions = 0;
     else
-      set(handles.button_load,'string','Next session')
       
-      folders = dir(pathcat(varargin{1},'Session*'));
+      h.folders = dir(pathcat(h.pathIn,'Session*'));
+      h.nSessions = length(h.folders);
+      h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
       
-      bhfile=dir(pathcat(varargin{1},folders(1).name,'aa*.txt'));
-      pathcat(varargin{1},folders(1).name,bhfile.name)
-      
-      handles = read_bh_file(handles,pathcat(varargin{1},folders(1).name,bhfile.name));
-      
-      handles = run_methods(handles);
+      bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
+      h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
+      set(h.button_load,'string','Next session')
     end
+    h = run_methods(h);
     
+  else
+    h.nSessions = 0;
+    h.currSession = 0;
+    h.pathSession = '';
   end
   
   % Choose default command line output for alignData
-  handles.output = hObject;
+  h.output = hObject;
 
-  % Update handles structure
-  guidata(hObject, handles);
+  % Update h structure
+  guidata(hObject, h);
 
 % UIWAIT makes alignData wait for user response (see UIRESUME)
-% uiwait(handles.alignData);
+% uiwait(h.alignData);
 
 
 function h = set_paras(h)
@@ -125,20 +127,21 @@ function h = set_paras(h)
   h.paras.col_speed = 2;
   h.paras.col_frame = 4;
   h.paras.col_pos = 6;
-  h.paras.col_TTL = 8;   %% -> dynamic
+  h.paras.col_TTL = 3;   %% -> dynamic
   
   %% procession of behavioural data
-  h.paras.runthres=0.5;                            %% threshold to define active / inactive periods (cm/sec)
+  h.paras.runthres = 0.5;                            %% threshold to define active / inactive periods (cm/sec)
   h.paras.lr_min = 30;                             %% number of minimal frames considered to be a "long run"-event
-  h.paras.nbin=80;                                 %% number of divisions of the linear track
+  h.paras.nbin = 80;                                 %% number of divisions of the linear track
   
   h.paras.cols = 8;
   
   
   h.paras.totallength = str2double(get(h.entry_tracklength,'string'));
-  h.paras.pos_offset = h.paras.totallength%% get from minimum of data -> subtract
+  h.paras.pos_offset = str2double(get(h.entry_pos_offset,'string'));
+%    h.paras.pos_offset = h.paras.totallength%% get from minimum of data -> subtract
   
-  h.paras.binwidth = h.paras.totallength/h.paras.nbin;
+%    h.paras.binwidth = h.paras.totallength/h.paras.nbin;
 
 
 function h = read_bh_file(h,pathBH)
@@ -148,9 +151,6 @@ function h = read_bh_file(h,pathBH)
   fgets(fid);
   tLines = fgets(fid);
   numCols = numel(strfind(tLines,delimiter));
-%    fclose(fid);
-  disp('number of columns:')
-  numCols
   whole_data=fscanf(fid, '%f', [numCols, inf]);
   fclose(fid);
   
@@ -172,28 +172,38 @@ function h = read_bh_file(h,pathBH)
       diffsig=diff(data_TTL);
       idx_end=find(diffsig > 0.5,1,'last');% find the last point or high TTL
             
-      if sync_sum==0
-              disp('WARNING --- Sync signal is missing')
-      elseif h.paras.nframe~=sync_last
-              disp('WARNING --- Frame number mismatch')
-      end
+%        if sync_sum==0
+%                disp('WARNING --- Sync signal is missing')
+%        elseif h.paras.nframe~=sync_last
+%                disp('WARNING --- Frame number mismatch')
+%        end
   end
   
   datapoints = idx_end-idx_start+1;
   %% if needed, reassign frame numbers
   if  sync_sum==0 | h.paras.nframe~=sync_last
     datapoints_per_frame  = datapoints/h.paras.nframe; 
-    frame_num = ceil((1:datapoints)/datapoints_per_frame);
-    disp('New frame numbers assigned')
+    h.data.frame_num = ceil((1:datapoints)/datapoints_per_frame);
+%      disp('New frame numbers assigned')
   else
-    frame_num = whole_data(h.paras.col_frame,idx_start:idx_end);
+    h.data.frame_num = whole_data(h.paras.col_frame,idx_start:idx_end);
   end
   
   %% raw data
   h.data.bh.datapoints = datapoints;
   h.data.bh.time = whole_data(h.paras.col_t,idx_start:end)-whole_data(h.paras.col_t,idx_start);       % offset corrected
   h.data.bh.speed = whole_data(h.paras.col_speed,idx_start:end);
-  h.data.bh.pos = whole_data(h.paras.col_pos,idx_start:end) + h.paras.pos_offset;
+  h.data.bh.pos = whole_data(h.paras.col_pos,idx_start:end);
+  
+  min_pos = min(h.data.bh.pos);
+  max_pos = max(h.data.bh.pos);
+  
+  if h.currSession==1
+    h.paras.totallength = round((max_pos-min_pos)/100)*100;
+    set(h.entry_tracklength,'string',sprintf('%d',h.paras.totallength))
+    h.paras.pos_offset = -round(min_pos);
+    set(h.entry_pos_offset,'string',sprintf('%d',h.paras.pos_offset))
+  end
   
   %% cropped, aligned data
   h.data.time = h.data.bh.time(1:h.data.bh.datapoints);
@@ -209,7 +219,7 @@ function h = run_methods(h)
   h = smooth_data(h);
   h = run_align(h);
   h = plot_align(h);
-  
+  h = updateSaveStatus(h,false);
   
 
 function h = smooth_data(h)
@@ -247,7 +257,7 @@ function h = run_align(h)
     n_speed = idx_align_speed(i)-idx_align_speed(i-1);
     %% check if distances of stopping periods are the same
     if n_loc~=n_speed   %% if not, resample location points and write to new position
-      loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i));
+      loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
       
       time_speed = linspace(h.data.bh.time(idx_align_speed(i-1)+1),h.data.bh.time(idx_align_speed(i)),n_speed);
       time_loc = linspace(h.data.bh.time(idx_align_speed(i-1)+1),h.data.bh.time(idx_align_speed(i)),n_loc);
@@ -256,7 +266,7 @@ function h = run_align(h)
       
       offset = offset + n_speed;
     else      %% if they are, just write old to new data
-      loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i));
+      loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
       h.data.pos(offset:offset+n_speed-1) = loc_tmp;
       
       offset = offset + length(loc_tmp);
@@ -267,7 +277,7 @@ function h = run_align(h)
       n_speed = min(h.data.bh.datapoints - idx_align_speed(i),h.data.bh.datapoints - idx_align_pos(i));
       
       if n_speed > 0
-        h.data.pos(offset:offset+n_speed-1) = h.data.bh.pos(idx_align_pos(i)+1:idx_align_pos(i)+n_speed);
+        h.data.pos(offset:offset+n_speed-1) = h.data.bh.pos(idx_align_pos(i)+1:idx_align_pos(i)+n_speed) + h.paras.pos_offset;
       end
       break
     end
@@ -292,7 +302,7 @@ function h = plot_align(h)
   
   pos_tmp = h.data.pos*3*h.data.ymax/h.paras.totallength;
   h.pos = plot(h.ax,h.data.bh.time,pos_tmp,'k','Hittest','off','DisplayName','animal position (aligned)');
-  h.pos0 = plot(h.ax,h.data.time,h.data.bh.pos(1:h.data.bh.datapoints)*3*h.data.ymax/h.paras.totallength,'r--','Hittest','off','DisplayName','animal position');
+  h.pos0 = plot(h.ax,h.data.time,(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset)*3*h.data.ymax/h.paras.totallength,'r--','Hittest','off','DisplayName','animal position');
   
   h.reward = plot(h.ax,[0,h.data.duration],[60,60]*3*h.data.ymax/h.paras.nbin,'g--','LineWidth',2,'Hittest','off','DisplayName','reward position');
   h.gate = plot(h.ax,[0,h.data.duration],[20,20]*3*h.data.ymax/h.paras.nbin,'r--','LineWidth',2,'Hittest','off','DisplayName','gate position');
@@ -335,9 +345,9 @@ function h = plot_align(h)
   ylim(h.ax2,[-5,5])
   ylabel(h.ax2,'diff. anchor points')
   
-  err = h.data.pos(1:h.data.bh.datapoints)-h.data.bh.pos(1:h.data.bh.datapoints);
+  err = h.data.pos(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
   err = min([abs(err);abs(err-h.paras.pos_offset)])/(h.paras.pos_offset/100);
-%    err
+  
   hold(h.ax3,'on')
   h.err = plot(h.ax3,h.data.time,err,'r');
   
@@ -350,12 +360,9 @@ function h = plot_align(h)
   xlabel(h.ax3,'time [s]')
   ylabel(h.ax3,'deviation [cm]')
   
-%    plot cumulative points or rather difference of cummulative points (to see, where to remove etc)
-  
-  
   linkaxes([h.ax,h.ax2,h.ax3],'x')
   
-%    linkdata on
+  title(h.ax,sprintf('Now processing: %s',h.pathSession))
   
   
 function update_plot(h)
@@ -381,31 +388,26 @@ function update_plot(h)
   
   set(h.diff,'Ydata',cum_diff)
   
-  err = h.data.pos(1:h.data.bh.datapoints)-h.data.bh.pos(1:h.data.bh.datapoints);
+  err = h.data.pos(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
   err = min([abs(err);abs(err-h.paras.pos_offset)])/(h.paras.pos_offset/100);
+  
   
   set(h.err,'Ydata',err)
   err_ylim = max(10,max(imgaussfilt(err,10)));
   ylim(h.ax3,[-err_ylim,err_ylim])
-%    refreshdata(h.pos)
-%    refreshdata(h.scatter_pos)
-%    refreshdata(h.scatter_speed)
+  
+  set(h.ax,'Title',sprintf('Now processing: %s',h.pathSession))
   
   
-  
-  
-  
-  
-
 % --- Outputs from this function are returned to the command line.
-function varargout = alignData_OutputFcn(hObject, eventdata, handles) 
+function varargout = alignData_OutputFcn(hObject, eventdata, h) 
 % varargout  cell array for returning output args (see VARARGOUT);
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
 % Get default command line output from handles structure
-varargout{1} = handles.output;
+varargout{1} = h.output;
 
 
 function remove_align_point(hObject,eventdata,ax)
@@ -432,7 +434,6 @@ function remove_align_point(hObject,eventdata,ax)
       h.data.idx_align_speed_mask(idx_rm) = ~h.data.idx_align_speed_mask(idx_rm);
       h = run_align(h);
       guidata(hObject,h);
-      
       update_plot(h)
     end
   end
@@ -440,40 +441,111 @@ function remove_align_point(hObject,eventdata,ax)
   
   
 % --- Executes on button press in button_reset.
-function button_reset_Callback(hObject, eventdata, handles)
+function button_reset_Callback(hObject, eventdata, h)
 % hObject    handle to button_reset (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
   
-  handles = smooth_data(handles);
-  guidata(hObject,handles);
-  
-  handles = run_align(handles);
-  guidata(hObject,handles);
-  
-  handles = plot_align(handles);
-  guidata(hObject,handles);
+  h = set_paras(h);
+  h = run_methods(h);
+  guidata(hObject,h);
   
   
 
 % --- Executes on button press in button_save.
-function button_save_Callback(hObject, eventdata, handles)
+function button_save_Callback(hObject, eventdata, h)
 % hObject    handle to button_save (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
   
-  setappdata(0,'new_position',handles.data.pos)
   
-  delete(gcf)
+  %% resample stuff at 15 Hz by averaging
+  for i=1:h.paras.nframe
+    idx = find(h.data.frame_num==i);
+    alignedData.time(i) = mean(h.data.time(idx));        % time
+    alignedData.frame(i) = i;                            % frame number
+    alignedData.position(i) = median(h.data.pos(idx));   % position
+    alignedData.speed(i) = mean(h.data.speed(idx));      % speed
+  end
+  alignedData.duration = alignedData.time(end);
+  
+  
+  h.paras.binwidth = h.paras.totallength/h.paras.nbin;
+  alignedData.binpos = min(floor(alignedData.position/h.paras.binwidth)+1,h.paras.nbin);
+    
+  %% defining run epochs by finding super-threshold movement speed
+  sm = ones(1,10+1);
+  alignedData.runrest = imerode(imdilate(alignedData.speed >= h.paras.runthres,sm),sm);   %% filling holes of size up to 5 (=1/3 sec)
+  alignedData.longrunperiod = bwareaopen(alignedData.runrest,h.paras.lr_min);    % find lonrunperiods as connected areas > lr_min of size
+  
+  %% create dwell time histogram
+  alignedData.dwelltime = zeros(1,h.paras.nbin);
+  binpos = alignedData.binpos(alignedData.longrunperiod);
+  for i=1:length(binpos)
+    alignedData.dwelltime(binpos(i)) = alignedData.dwelltime(binpos(i)) + 1/h.paras.f;
+  end
+  alignedData.norm_dwelltime = alignedData.dwelltime/sum(alignedData.dwelltime);
+  
+%    if strcmp(para.mode,'regress')
+%      binpos = min(floor(bh(s).position/para.binwidth)+1,para.nbin);
+%      bh(s).place_vectors = zeros(para.nbin,para.nframe);
+%      for i = 1:length(binpos)
+%        if bh(s).longrunperiod(i)
+%          bh(s).place_vectors(binpos(i),i) = 1;
+%        end
+%      end
+%    end
+  
+  pathSave = pathcat(h.pathSession,'alignedData.m');
+  save(pathSave,'alignedData','-v7.3')
+  msgbox(sprintf('Aligned behavior data saved at %s',pathSave))
+  
+  h = updateSaveStatus(h,true);
+  guidata(hObject,h);
+  
+
+function h = updateSaveStatus(h,new_status)
+  
+  h.save_status = new_status;
+  if h.save_status
+    set(h.button_save,'BackgroundColor','green');
+  else
+    set(h.button_save,'BackgroundColor','red');
+  end
+  
+
 
 % --- Executes on button press in button_load.
-function button_load_Callback(hObject, eventdata, handles)
+function button_load_Callback(hObject, eventdata, h)
 % hObject    handle to button_load (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
   
-  %% 
-
+  if ~h.nSessions
+    
+    %% check, if previous file was loaded and start from there
+    [fileName, h.pathSession] = uigetfile({'*.txt'},'Choose behavior file',h.pathSession);
+    h = read_bh_file(h,pathcat(h.pathSession,fileName));
+    h = run_methods(h);
+    h = updateSaveStatus(h,false);
+    guidata(hObject,h);
+    
+  elseif h.currSession < h.nSessions
+    h.save_status = false;
+    h.currSession = h.currSession + 1;
+    if h.currSession == h.nSessions
+      set(h.button_load,'string','Finish')
+    end
+    h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
+    bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
+    h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
+    h = run_methods(h);
+    guidata(hObject,h);
+  elseif h.currSession == h.nSessions
+    delete(gcf)
+  end
+    
+  
 
 function entry_smooth_Callback(hObject, eventdata, handles)
 % hObject    handle to entry_smooth (see GCBO)
@@ -520,6 +592,29 @@ function entry_tracklength_Callback(hObject, eventdata, handles)
 % --- Executes during object creation, after setting all properties.
 function entry_tracklength_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to entry_tracklength (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function entry_pos_offset_Callback(hObject, eventdata, handles)
+% hObject    handle to entry_pos_offset (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of entry_pos_offset as text
+%        str2double(get(hObject,'String')) returns contents of entry_pos_offset as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function entry_pos_offset_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to entry_pos_offset (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
