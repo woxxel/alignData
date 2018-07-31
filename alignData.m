@@ -7,11 +7,9 @@
 %%
 %% TODOs:
 %% - give estimate, when data seems to be alright (from overall number of alignment points?
-%% - add button to save figure / image
-%% - add alignment by TTL / reward reward_signal
-%% - add entry field for which signal should be used as "reward telling"
-%% - add another entry field for reward position
 %% - adapt y-axis to fit either bin-number of cm
+%% - end-positions are all 0... why?
+%% save as original number of datapoints
 
 
 function varargout = alignData(varargin)
@@ -94,7 +92,8 @@ function alignData_OpeningFcn(hObject, eventdata, h, varargin)
       h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
       
       bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-      h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
+      h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+      h = read_bh_file(h,h.pathBHfile);
       set(h.button_next,'string','>>')
       set(h.button_previous,'visible','on')
     end
@@ -310,8 +309,9 @@ function h = run_align(h)
     end
     
     %% if there is no stopping period after recording stops, assign remaining positions linearly
-    if i == length(idx_align_pos) || i == length(idx_align_speed)
-      n_speed = min(h.data.bh.datapoints - idx_align_speed(i),h.data.bh.datapoints - idx_align_pos(i));
+    if i == length(idx_align_pos) || i == length(idx_align_speed) || offset > h.data.bh.datapoints
+      lbh = length(h.data.bh.pos);
+      n_speed = min(lbh - idx_align_speed(i),lbh - idx_align_pos(i));
       
       if n_speed > 0
         h.data.pos_s(offset:offset+n_speed-1) = h.data.bh.pos(idx_align_pos(i)+1:idx_align_pos(i)+n_speed) + h.paras.pos_offset;
@@ -350,7 +350,8 @@ function h = run_align(h)
       end
       
       if i == length(h.data.idx_reward_pos) || i == length(h.data.idx_reward_signal) || offset > h.data.bh.datapoints
-        n_signal = min(h.data.bh.datapoints - h.data.idx_reward_signal(i),h.data.bh.datapoints - h.data.idx_reward_pos(i));
+        lbh = length(h.data.bh.pos);
+        n_signal = min(lbh - h.data.idx_reward_signal(i),lbh - h.data.idx_reward_pos(i));
         
         if n_signal > 0
           h.data.pos_r(offset:offset+n_signal-1) = h.data.bh.pos(h.data.idx_reward_pos(i)+1:h.data.idx_reward_pos(i)+n_signal) + h.paras.pos_offset;
@@ -401,7 +402,9 @@ function h = plot_align(h)
   pos_r_tmp = h.data.pos_r*3*h.data.ymax/h.paras.ptlength;
   h.pos_r = plot(h.ax,h.data.bh.time,pos_r_tmp,'k','Hittest','off','DisplayName','animal position (aligned, TTL)','LineStyle',LS_r,'LineWidth',LW_r);
   
-  h.pos0 = plot(h.ax,h.data.time,(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset)*3*h.data.ymax/h.paras.ptlength,'r--','Hittest','off','DisplayName','animal position');
+%    h.pos0 = plot(h.ax,h.data.time,(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset)*3*h.data.ymax/h.paras.ptlength,'r--','Hittest','off','DisplayName','animal position');
+  h.pos0 = plot(h.ax,h.data.bh.time,(h.data.bh.pos + h.paras.pos_offset)*3*h.data.ymax/h.paras.ptlength,'r--','Hittest','off','DisplayName','animal position');
+  
   
   h.reward = plot(h.ax,[0,h.data.duration],[h.paras.reward_thr,h.paras.reward_thr]*3*h.data.ymax/h.paras.ptlength,'g--','LineWidth',2,'Hittest','off','DisplayName','reward position');
   h.gate = plot(h.ax,[0,h.data.duration],[20,20]*3*h.data.ymax/h.paras.nbin,'r--','LineWidth',2,'Hittest','off','DisplayName','gate position');
@@ -632,45 +635,59 @@ function button_save_Callback(hObject, eventdata, h)
   
 function save_data(h)
   
+  alignedData = struct;
+  
+  if get(h.radio_stops,'Value')
+    alignedData.position = h.data.pos_s(1:h.data.bh.datapoints);            % position
+  else
+    alignedData.position = h.data.pos_r(1:h.data.bh.datapoints);
+  end
+  alignedData.speed = h.data.speed;
+  alignedData.time = h.data.time;        % time
+  alignedData.frame = h.data.frame_num;
+  
+  alignedData.resampled = struct;
+  
   %% resample stuff at 15 Hz by averaging
   for i=1:h.paras.nframe
     idx = find(h.data.frame_num==i);
-    alignedData.time(i) = mean(h.data.time(idx));        % time
-    alignedData.frame(i) = i;                            % frame number
+    alignedData.resampled.time(i) = mean(h.data.time(idx));        % time
+    alignedData.resampled.frame(i) = i;                            % frame number
     
     if get(h.radio_stops,'Value')
-      alignedData.position(i) = median(h.data.pos_s(idx));   % position
+      alignedData.resampled.position(i) = median(h.data.pos_s(idx));   % position
     else
-      alignedData.position(i) = median(h.data.pos_r(idx));
+      alignedData.resampled.position(i) = median(h.data.pos_r(idx));
     end
     
-    alignedData.speed(i) = mean(h.data.speed(idx));      % speed
+    alignedData.resampled.speed(i) = mean(h.data.speed(idx));      % speed
   end
-  alignedData.duration = alignedData.time(end);
+  alignedData.resampled.duration = alignedData.resampled.time(end);
   
   
   h.paras.binwidth = h.paras.ptlength/h.paras.nbin;
-  alignedData.binpos = min(floor(alignedData.position/h.paras.binwidth)+1,h.paras.nbin);
+  alignedData.resampled.binpos = min(floor(alignedData.resampled.position/h.paras.binwidth)+1,h.paras.nbin);
     
   %% defining run epochs by finding super-threshold movement speed
   sm = ones(1,10+1);
-  alignedData.runrest = imerode(imdilate(alignedData.speed >= h.paras.runthres,sm),sm);   %% filling holes of size up to 5 (=1/3 sec)
-  alignedData.longrunperiod = bwareaopen(alignedData.runrest,h.paras.lr_min);    % find lonrunperiods as connected areas > lr_min of size
+  alignedData.resampled.runrest = imerode(imdilate(alignedData.resampled.speed >= h.paras.runthres,sm),sm);   %% filling holes of size up to 5 (=1/3 sec)
+  alignedData.resampled.longrunperiod = bwareaopen(alignedData.resampled.runrest,h.paras.lr_min);    % find lonrunperiods as connected areas > lr_min of size
   
   %% create dwell time histogram
-  alignedData.dwelltime = zeros(1,h.paras.nbin);
-  binpos = max(1,alignedData.binpos(alignedData.longrunperiod));
+  alignedData.resampled.dwelltime = zeros(1,h.paras.nbin);
+  binpos = max(1,alignedData.resampled.binpos(alignedData.resampled.longrunperiod));
   for i=1:length(binpos)
-    alignedData.dwelltime(binpos(i)) = alignedData.dwelltime(binpos(i)) + 1/h.paras.f;
+    alignedData.resampled.dwelltime(binpos(i)) = alignedData.resampled.dwelltime(binpos(i)) + 1/h.paras.f;
   end
-  alignedData.norm_dwelltime = alignedData.dwelltime/sum(alignedData.dwelltime);
+  alignedData.resampled.norm_dwelltime = alignedData.resampled.dwelltime/sum(alignedData.resampled.dwelltime);
   
-  pathSave = pathcat(h.pathSession,'alignedData.m');
+  [~,fileSave,~] = fileparts(h.pathBHfile);
+  
+  pathSave = pathcat(h.pathSession,sprintf('%s_aligned.mat'),fileSave);
   save(pathSave,'alignedData','-v7.3')
-%    msgbox(sprintf('Aligned behavior data saved at %s',pathSave))
   
   if get(h.checkbox_savefigure,'value')
-    pathSave = pathcat(h.pathSession,'alignedData.png');
+    pathSave = pathcat(h.pathSession,sprintf('%s_aligned.mat'),fileSave);
     export_fig(gcf,pathSave,'-png')
     disp(sprintf('figure saved as %s',pathSave))
   end
@@ -720,7 +737,9 @@ function button_next_Callback(hObject, eventdata, h)
     end
     h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
     bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-    h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
+    h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+    h = read_bh_file(h,h.pathBHfile);
+%      h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
     h = run_methods(h);
     guidata(hObject,h);
   elseif h.currSession == h.nSessions
@@ -749,7 +768,8 @@ function button_previous_Callback(hObject, eventdata, h)
     end
     h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
     bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-    h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
+    h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+    h = read_bh_file(h,h.pathBHfile);
     h = run_methods(h);
     guidata(hObject,h);
   end
