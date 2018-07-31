@@ -8,8 +8,6 @@
 %% TODOs:
 %% - give estimate, when data seems to be alright (from overall number of alignment points?
 %% - adapt y-axis to fit either bin-number of cm
-%% - end-positions are all 0... why?
-%% save as original number of datapoints
 
 
 function varargout = alignData(varargin)
@@ -683,11 +681,11 @@ function save_data(h)
   
   [~,fileSave,~] = fileparts(h.pathBHfile);
   
-  pathSave = pathcat(h.pathSession,sprintf('%s_aligned.mat'),fileSave);
+  pathSave = pathcat(h.pathSession,sprintf('%s_aligned.mat',fileSave));
   save(pathSave,'alignedData','-v7.3')
   
   if get(h.checkbox_savefigure,'value')
-    pathSave = pathcat(h.pathSession,sprintf('%s_aligned.mat'),fileSave);
+    pathSave = pathcat(h.pathSession,sprintf('%s_aligned.png',fileSave));
     export_fig(gcf,pathSave,'-png')
     disp(sprintf('figure saved as %s',pathSave))
   end
