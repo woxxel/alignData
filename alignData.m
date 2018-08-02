@@ -716,7 +716,8 @@ function button_next_Callback(hObject, eventdata, h)
     
     [fileName, h.pathSession] = uigetfile({'*.txt'},'Choose behavior file',h.pathSession);
     h.pathIn = pathcat(h.pathSession,fileName);
-    h = read_bh_file(h,h.pathIn);
+    h.pathBHfile = h.pathIn;
+    h = read_bh_file(h,h.pathBHfile);
     h = run_methods(h);
     h = updateSaveStatus(h,false);
     
