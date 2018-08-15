@@ -299,6 +299,14 @@ function h = run_align(h)
         
         loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
         
+        
+        dloc = diff(loc_tmp_tp);
+        if ~all(dloc>=0)
+          disp('interp pre')
+          loc_tmp
+          dloc
+        end
+        
         idx1 = round(idx_align_speed(i-1)+1 + trialpoint(t-1)*(n_speed/n_loc));
         idx2 = round(idx_align_speed(i-1)+1 + (trialpoint(t)-1)*(n_speed/n_loc));
         
@@ -311,13 +319,35 @@ function h = run_align(h)
         h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
         offset = offset + n_fill;
         
+        fill_tmp = interp1(time_loc,loc_tmp_tp,time_speed);
+        dloc = diff(fill_tmp);
+        if ~all(dloc>=0)
+          disp('interp post')
+          loc_tmp
+          dloc
+        end
+        
       end
     
     else      %% if they are, just write old to new data
       loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
-      h.data.pos_s(offset:offset+n_speed-1) = loc_tmp;
       
-      offset = offset + length(loc_tmp);
+      trialpoint = [0,find(diff(loc_tmp)<-10),n_loc];
+      for t = 2:length(trialpoint)
+        
+        loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+        dloc = diff(loc_tmp_tp);
+        if ~all(dloc>=0)
+          disp('direct')
+          loc_tmp
+          dloc
+        end
+        n_points = trialpoint(t) - trialpoint(t-1);
+        h.data.pos_s(offset:offset+n_points-1) = loc_tmp_tp;
+        offset = offset + n_points;
+        
+      end
+      
     end
     
     %% if there is no stopping period after recording stops, assign remaining positions linearly
@@ -369,9 +399,19 @@ function h = run_align(h)
       
       else      %% if they are, just write old to new data
         loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
-        h.data.pos_r(offset:offset+n_signal-1) = loc_tmp;
         
-        offset = offset + length(loc_tmp);
+        trialpoint = [0,find(diff(loc_tmp)<-10),n_pos];
+        for t = 2:length(trialpoint)
+          loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+          
+          n_points = trialpoint(t) - trialpoint(t-1);
+          h.data.pos_r(offset:offset+n_points-1) = loc_tmp_tp;
+          offset = offset + n_points;
+          
+        end
+        
+%          h.data.pos_r(offset:offset+n_signal-1) = loc_tmp;
+        
       end
       
       if i == length(h.data.idx_reward_pos) || i == length(h.data.idx_reward_signal) || offset > h.data.bh.datapoints
@@ -680,15 +720,16 @@ function save_data(h)
     alignedData.resampled.frame(i) = i;                            % frame number
     
     if get(h.radio_stops,'Value')
-      alignedData.resampled.position(i) = median(h.data.pos_s(idx));   % position
+      val_tmp = sort(h.data.pos_s(idx));
+      alignedData.resampled.position(i) = val_tmp(round(length(val_tmp)/2));   % quasi median filtering (avoiding half values!)
     else
-      alignedData.resampled.position(i) = median(h.data.pos_r(idx));
+      val_tmp = sort(h.data.pos_r(idx));
+      alignedData.resampled.position(i) = val_tmp(round(length(val_tmp)/2));
     end
     
     alignedData.resampled.speed(i) = mean(h.data.speed(idx));      % speed
   end
   alignedData.resampled.duration = alignedData.resampled.time(end);
-  
   
   h.paras.binwidth = h.paras.ptlength/h.paras.nbin;
   alignedData.resampled.binpos = min(floor(alignedData.resampled.position/h.paras.binwidth)+1,h.paras.nbin);
