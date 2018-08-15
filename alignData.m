@@ -290,15 +290,29 @@ function h = run_align(h)
     n_loc = idx_align_pos(i)-idx_align_pos(i-1);
     n_speed = idx_align_speed(i)-idx_align_speed(i-1);
     %% check if distances of stopping periods are the same
+    
     if n_loc~=n_speed   %% if not, resample location points and write to new position
       loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
       
-      time_speed = linspace(h.data.bh.time(idx_align_speed(i-1)+1),h.data.bh.time(idx_align_speed(i)),n_speed);
-      time_loc = linspace(h.data.bh.time(idx_align_speed(i-1)+1),h.data.bh.time(idx_align_speed(i)),n_loc);
-      
-      h.data.pos_s(offset:offset+n_speed-1) = interp1(time_loc,loc_tmp,time_speed);
-      
-      offset = offset + n_speed;
+      trialpoint = [0,find(diff(loc_tmp)<-10),n_loc];
+      for t = 2:length(trialpoint)
+        
+        loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+        
+        idx1 = round(idx_align_speed(i-1)+1 + trialpoint(t-1)*(n_speed/n_loc));
+        idx2 = round(idx_align_speed(i-1)+1 + (trialpoint(t)-1)*(n_speed/n_loc));
+        
+        n_points = trialpoint(t) - trialpoint(t-1);
+        n_fill = idx2-idx1+1;
+        
+        time_speed = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
+        time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
+        
+        h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
+        offset = offset + n_fill;
+        
+      end
+    
     else      %% if they are, just write old to new data
       loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
       h.data.pos_s(offset:offset+n_speed-1) = loc_tmp;
@@ -332,14 +346,27 @@ function h = run_align(h)
       n_signal = h.data.idx_reward_signal(i)-h.data.idx_reward_signal(i-1);
       
       if n_pos~=n_signal   %% if not, resample location points and write to new position
+        
         loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
         
-        time_signal = linspace(h.data.bh.time(h.data.idx_reward_signal(i-1)+1),h.data.bh.time(h.data.idx_reward_signal(i)),n_signal);
-        time_loc = linspace(h.data.bh.time(h.data.idx_reward_signal(i-1)+1),h.data.bh.time(h.data.idx_reward_signal(i)),n_pos);
-        
-        h.data.pos_r(offset:offset+n_signal-1) = interp1(time_loc,loc_tmp,time_signal);
-        
-        offset = offset + n_signal;
+        trialpoint = [0,find(diff(loc_tmp)<-10),n_pos];
+        for t = 2:length(trialpoint)
+          loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+          
+          idx1 = round(h.data.idx_reward_signal(i-1)+1 + trialpoint(t-1)*(n_signal/n_pos));
+          idx2 = round(h.data.idx_reward_signal(i-1)+1 + (trialpoint(t)-1)*(n_signal/n_pos));
+          
+          n_points = trialpoint(t) - trialpoint(t-1);
+          n_fill = idx2-idx1+1;
+          
+          time_signal = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
+          time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
+          
+          h.data.pos_r(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_signal);
+          offset = offset + n_fill;
+          
+        end
+      
       else      %% if they are, just write old to new data
         loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
         h.data.pos_r(offset:offset+n_signal-1) = loc_tmp;
