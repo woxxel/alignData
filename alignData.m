@@ -698,6 +698,7 @@ function button_save_Callback(hObject, eventdata, h)
   guidata(hObject,h);
   
   
+  
 function save_data(h)
   
   alignedData = struct;
