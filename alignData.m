@@ -207,13 +207,15 @@ function h = read_bh_file(h,pathBH)
   end
   
   datapoints = idx_end-idx_start+1;
-  %% if needed, reassign frame numbers
-  if  sync_sum==0 | h.paras.nframe~=sync_last
+  %% if needed, reassign frame numbers (sometimes, files have weird saved frames. therefore, just assign all. in 99%, the frame number differs by 1/-1 only, anyway!)
+%    if  sync_sum==0 | h.paras.nframe~=sync_last
+%      disp('reassign')
     datapoints_per_frame  = datapoints/h.paras.nframe; 
     h.data.frame_num = ceil((1:datapoints)/datapoints_per_frame);
-  else
-    h.data.frame_num = whole_data(h.paras.col_frame,idx_start:idx_end);
-  end
+%    else
+%      disp('read')
+%      h.data.frame_num_2 = whole_data(h.paras.col_frame,idx_start:idx_end);
+%    end
   
   %% raw data
   h.data.bh.datapoints = datapoints;
@@ -297,36 +299,26 @@ function h = run_align(h)
       trialpoint = [0,find(diff(loc_tmp)<-10),n_loc];
       for t = 2:length(trialpoint)
         
+        n_points = trialpoint(t) - trialpoint(t-1);
         loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
         
-        
-        dloc = diff(loc_tmp_tp);
-        if ~all(dloc>=0)
-          disp('interp pre')
-          loc_tmp
-          dloc
+        if n_points > 5
+          idx1 = round(idx_align_speed(i-1)+1 + trialpoint(t-1)*(n_speed/n_loc));
+          idx2 = round(idx_align_speed(i-1)+1 + (trialpoint(t)-1)*(n_speed/n_loc));
+          
+          n_fill = idx2-idx1+1;
+          
+          time_speed = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
+          time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
+          
+          h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
+          offset = offset + n_fill;
+          
+          fill_tmp = interp1(time_loc,loc_tmp_tp,time_speed);
+        else
+          h.data.pos_s(offset:offset+n_points-1) = loc_tmp_tp;
+          offset = offset + n_points;
         end
-        
-        idx1 = round(idx_align_speed(i-1)+1 + trialpoint(t-1)*(n_speed/n_loc));
-        idx2 = round(idx_align_speed(i-1)+1 + (trialpoint(t)-1)*(n_speed/n_loc));
-        
-        n_points = trialpoint(t) - trialpoint(t-1);
-        n_fill = idx2-idx1+1;
-        
-        time_speed = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
-        time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
-        
-        h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
-        offset = offset + n_fill;
-        
-        fill_tmp = interp1(time_loc,loc_tmp_tp,time_speed);
-        dloc = diff(fill_tmp);
-        if ~all(dloc>=0)
-          disp('interp post')
-          loc_tmp
-          dloc
-        end
-        
       end
     
     else      %% if they are, just write old to new data
@@ -336,12 +328,7 @@ function h = run_align(h)
       for t = 2:length(trialpoint)
         
         loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
-        dloc = diff(loc_tmp_tp);
-        if ~all(dloc>=0)
-          disp('direct')
-          loc_tmp
-          dloc
-        end
+        
         n_points = trialpoint(t) - trialpoint(t-1);
         h.data.pos_s(offset:offset+n_points-1) = loc_tmp_tp;
         offset = offset + n_points;
@@ -365,36 +352,36 @@ function h = run_align(h)
   end
   
   h.data.pos_r = zeros(1,length(h.data.bh.pos));
-  
   if length(h.data.idx_reward_signal)>1 && length(h.data.idx_reward_pos)>1
     
     offset = 1;
     i = 2;
     while offset < h.data.bh.datapoints
-      
       n_pos = h.data.idx_reward_pos(i)-h.data.idx_reward_pos(i-1);
       n_signal = h.data.idx_reward_signal(i)-h.data.idx_reward_signal(i-1);
       
       if n_pos~=n_signal   %% if not, resample location points and write to new position
-        
         loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
-        
         trialpoint = [0,find(diff(loc_tmp)<-10),n_pos];
         for t = 2:length(trialpoint)
+          n_points = trialpoint(t) - trialpoint(t-1);
           loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
           
-          idx1 = round(h.data.idx_reward_signal(i-1)+1 + trialpoint(t-1)*(n_signal/n_pos));
-          idx2 = round(h.data.idx_reward_signal(i-1)+1 + (trialpoint(t)-1)*(n_signal/n_pos));
-          
-          n_points = trialpoint(t) - trialpoint(t-1);
-          n_fill = idx2-idx1+1;
-          
-          time_signal = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
-          time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
-          
-          h.data.pos_r(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_signal);
-          offset = offset + n_fill;
-          
+          if n_points > 5
+            idx1 = round(h.data.idx_reward_signal(i-1)+1 + trialpoint(t-1)*(n_signal/n_pos));
+            idx2 = round(h.data.idx_reward_signal(i-1)+1 + (trialpoint(t)-1)*(n_signal/n_pos));
+            
+            n_fill = idx2-idx1+1;
+            
+            time_signal = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
+            time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
+            
+            h.data.pos_r(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_signal);
+            offset = offset + n_fill;
+          else
+            h.data.pos_r(offset:offset+n_points-1) = loc_tmp_tp;
+            offset = offset + n_points;
+          end
         end
       
       else      %% if they are, just write old to new data
@@ -437,8 +424,6 @@ function h = plot_align(h)
   h.data.ymax = ceil(max(h.data.speed));
   
   plot(h.ax,h.data.time,-imgaussfilt(h.data.speed,10),'b','Hittest','off')
-  
-  
   
   hold(h.ax,'on')
   bar(h.ax,h.data.bh.time,~h.data.speed_bool*3*h.data.ymax,1,'FaceColor',[0.8 0.8 0.8],'Hittest','off')
@@ -490,7 +475,7 @@ function h = plot_align(h)
   xlim(h.ax,[0,min(600,h.data.bh.time(end))])
   
   set(h.ax,'ButtonDownFcn',{@remove_align_point,h.ax},'Hittest','on','PickableParts','All');
-  legend(h.ax,[h.pos0,h.pos,h.reward,h.gate,h.scatter_pos,h.scatter_speed],'location','SouthWest')
+  legend(h.ax,[h.pos0,h.pos,h.reward,h.gate,h.scatter_pos,h.scatter_speed],'location','SouthWest');
   
   cum_pos = zeros(size(h.data.bh.time));
   cum_pos(h.data.idx_align_pos(h.data.idx_align_pos_mask)+1) = 1;
@@ -805,7 +790,12 @@ function button_next_Callback(hObject, eventdata, h)
     end
     h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
     bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-    h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+    if isempty(bhfile)
+      [fileName, h.pathSession] = uigetfile ({'*.txt'},'Choose behavior file',h.pathSession);
+      h.pathBHfile = pathcat(h.pathSession,fileName);
+    else
+      h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+    end
     h = read_bh_file(h,h.pathBHfile);
 %      h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
     h = run_methods(h);
