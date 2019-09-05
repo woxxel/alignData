@@ -67,21 +67,27 @@ function alignData_OpeningFcn(hObject, eventdata, h, varargin)
   h.save_status = false;
   h.data = struct;
   
-  assert(nargin<=4,'Too many inputs provided. Call alignData with a mouse folder- or file-name, or without any input!')
+  assert(nargin<=5,'Too many inputs provided. Call alignData with a mouse folder- or file-name, or without any input!')
   
   h = set_paras(h);
   
-  if nargin == 4   %% if GUI is called with input
+  if nargin >= 4   %% if GUI is called with input
     
     %% check if input is string
     h.pathIn = varargin{1};
     assert(isstr(h.pathIn),'Provide input as a string of the data path')
     
-    h.currSession = 1;
+    if nargin == 5
+      h.currSession = varargin{2};
+    else
+      h.currSession = 1;
+    end
     
     [folderName,fileName,extension] = fileparts(h.pathIn);
-    if strcmp(extension,'.txt')
+    if strcmp(extension,'.txt') || strcmp(extension,'.mat')
+      h.folders.name = '';
       h.pathSession = folderName;
+      h.pathBHfile = h.pathIn;
       h = read_bh_file(h,h.pathIn);
       h.nSessions = 0;
     else
@@ -89,8 +95,10 @@ function alignData_OpeningFcn(hObject, eventdata, h, varargin)
       h.nSessions = length(h.folders);
       h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
       
-      bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-      h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+      %% take .mat file. if not present, take .txt file
+%        bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*aligned.mat'));
+%        if isempty(bhfile)
+      h = get_BHFile(h);
       h = read_bh_file(h,h.pathBHfile);
       set(h.button_next,'string','>>')
       set(h.button_previous,'visible','on')
@@ -115,6 +123,18 @@ function alignData_OpeningFcn(hObject, eventdata, h, varargin)
 % uiwait(h.alignData);
 
 
+function h = get_BHFile(h)
+  
+  if h.nSessions
+    bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*.txt'));
+    if isempty(bhfile)
+      [fileName, h.pathSession] = uigetfile ({'*.txt'},'Choose behavior file',h.pathSession);
+      h.pathBHfile = pathcat(h.pathSession,fileName);
+    else
+      h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+    end
+  end
+
 function show_info()
   
   msgbox(sprintf('Info for usage\n\nStop onsets (anchors) in speed (red dots) and position (black dots) arrays are obtained by finding periods of 0 value (speed) or 0 change (position) in smoothed data with a gaussian kernel of length "SMOOTH"\n\nClick on anchor points to remove / add them to the alignment procedure. The updated best guess of aligned data (black line) will be displayed immediately'))
@@ -126,7 +146,6 @@ function h = set_paras(h)
   h.paras.f = 15;                 %% Hz frame rate of sampling
   
   %% information about data structure in behaviour files
-  %%% maybe add string to search for in here
   h.paras.startframe = 1;
   h.paras.nframe = 8989;
   
@@ -162,7 +181,6 @@ function h = set_paras(h)
   h.paras.cmlength = 100;
   
   
-  
 function h = set_paras_from_entries(h)
   h.paras.ptlength = str2double(get(h.entry_tracklength,'string'));
   h.paras.pos_offset = str2double(get(h.entry_pos_offset,'string'));
@@ -180,50 +198,66 @@ function h = set_paras_from_entries(h)
   
 function h = read_bh_file(h,pathBH)
   
-  delimiter = sprintf('\t',''); %or whatever
-  fid = fopen(pathBH,'r');
-  fgets(fid);
-  tLines = fgets(fid);
-  numCols = numel(strfind(tLines,delimiter));
-  whole_data=fscanf(fid, '%f', [numCols, inf]);
-  fclose(fid);
+  [folderName,fileName,extension] = fileparts(pathBH);
   
-  %%% check, whether frame numbers are present and whether they are in sync
-  data_frame  = whole_data(h.paras.col_frame,:);     % frame number
-  sync_sum    = sum(data_frame);
-  sync_last   = data_frame(end);
-  data_reward = whole_data(h.paras.col_TTL,:);       % microscope TTL
-  
-  if sync_sum~=0 & h.paras.nframe==sync_last
-      
-      idx_start=find(data_frame==h.paras.startframe,1,'first');
-      idx_end=find(data_frame==h.paras.nframe-1,1,'last')+3;
-      
-  elseif  sync_sum==0 | h.paras.nframe~=sync_last
-      
-      idx_start=find(data_reward<0.5,1,'first');% find the first point or low reward   
-      diffsig=diff(data_reward);
-      idx_end=find(diffsig > 0.5,1,'last');% find the last point or high reward
-  end
-  
-  datapoints = idx_end-idx_start+1;
-  %% if needed, reassign frame numbers (sometimes, files have weird saved frames. therefore, just assign all. in 99%, the frame number differs by 1/-1 only, anyway!)
-%    if  sync_sum==0 | h.paras.nframe~=sync_last
-%      disp('reassign')
+%    if strcmp(extension,'.mat')
+%      load(pathBH)
+%  
+%      h.data.bh.pos = alignedData.position;
+%      h.data.bh.speed = alignedData.speed;
+%      h.data.bh.time = alignedData.time;        % time
+%      
+%      h.data.frame_num = alignedData.frame;
+%      h.data.bh.datapoints = alignedData.datapoints;
+%      h.data.bh.reward = alignedData.reward;
+    
+  if strcmp(extension,'.txt')
+    delimiter = sprintf('\t',''); %or whatever
+    
+    fid = fopen(pathBH,'r');
+    fgets(fid);
+    tLines = fgets(fid);
+    numCols = numel(strfind(tLines,delimiter));
+    whole_data=fscanf(fid, '%f', [numCols, inf]);
+    fclose(fid);
+    
+    %%% check, whether frame numbers are present and whether they are in sync
+    data_frame  = whole_data(h.paras.col_frame,:);     % frame number
+    sync_sum    = sum(data_frame);
+    sync_last   = data_frame(end);
+    data_reward = whole_data(h.paras.col_reward,:);       % microscope TTL
+    
+    if sync_sum~=0 & h.paras.nframe==sync_last
+        
+        idx_start=find(data_frame==h.paras.startframe,1,'first');
+        idx_end=find(data_frame==h.paras.nframe-1,1,'last')+3;
+        
+    elseif  sync_sum==0 | h.paras.nframe~=sync_last
+        
+        idx_start=find(data_reward<0.5,1,'first');% find the first point or low reward   
+        diffsig=diff(data_reward);
+        idx_end=find(diffsig > 0.5,1,'last');% find the last point or high reward
+    end
+    datapoints = idx_end-idx_start+1;
+    %% if needed, reassign frame numbers (sometimes, files have weird saved frames. therefore, just assign all. in 99%, the frame number differs by 1/-1 only, anyway!)
+  %    if  sync_sum==0 | h.paras.nframe~=sync_last
+  %      disp('reassign')
     datapoints_per_frame  = datapoints/h.paras.nframe; 
     h.data.frame_num = ceil((1:datapoints)/datapoints_per_frame);
-%    else
-%      disp('read')
-%      h.data.frame_num_2 = whole_data(h.paras.col_frame,idx_start:idx_end);
-%    end
-  
-  %% raw data
-  h.data.bh.datapoints = datapoints;
-  h.data.bh.time = whole_data(h.paras.col_t,idx_start:end)-whole_data(h.paras.col_t,idx_start);       % offset corrected
-  h.data.bh.speed = whole_data(h.paras.col_speed,idx_start:end);
-  h.data.bh.pos = whole_data(h.paras.col_pos,idx_start:end);
-  h.data.bh.TTL = whole_data(h.paras.col_TTL,idx_start:end);
-  h.data.bh.reward = whole_data(h.paras.col_reward,idx_start:end);
+  %    else
+  %      disp('read')
+  %      h.data.frame_num_2 = whole_data(h.paras.col_frame,idx_start:idx_end);
+  %    end
+    
+    %% raw data
+    h.data.bh.datapoints = datapoints;
+    h.data.bh.time = whole_data(h.paras.col_t,idx_start:end)-whole_data(h.paras.col_t,idx_start);       % offset corrected
+    h.data.bh.speed = whole_data(h.paras.col_speed,idx_start:end);
+    h.data.bh.pos = whole_data(h.paras.col_pos,idx_start:end);
+%      h.data.bh.TTL = whole_data(h.paras.col_TTL,idx_start:end);
+    h.data.bh.reward = whole_data(h.paras.col_reward,idx_start:end);
+    
+  end
   
   min_pos = min(h.data.bh.pos);
   max_pos = max(h.data.bh.pos);
@@ -238,9 +272,9 @@ function h = read_bh_file(h,pathBH)
   end
   
   %% cropped, aligned data
-  h.data.time = h.data.bh.time(1:h.data.bh.datapoints);
-  h.data.duration = h.data.time(end);
-  h.data.speed = h.data.bh.speed(1:h.data.bh.datapoints);  
+  h.data.time = h.data.bh.time;%(1:h.data.bh.datapoints);
+  h.data.duration = h.data.time(h.data.bh.datapoints);
+  h.data.speed = h.data.bh.speed;%(1:h.data.bh.datapoints);
   
   
   
@@ -259,7 +293,6 @@ function h = smooth_data(h)
   smooth_para = str2double(get(h.entry_smooth,'string'))*(h.data.bh.datapoints/h.data.duration);
   pos_smooth = imgaussfilt(h.data.bh.pos,smooth_para);
   speed_smooth = imgaussfilt(h.data.bh.speed,smooth_para);
-  
   %%% find resting periods in both, speed and location vector
   dx = diff(pos_smooth);
   dx_bool = (dx == 0);
@@ -271,12 +304,11 @@ function h = smooth_data(h)
   idx_run_speed = find(~h.data.speed_bool)+1;
   h.data.idx_align_speed = [0,idx_run_speed(diff(idx_run_speed)>1)];
   h.data.idx_align_speed_mask = true(size(h.data.idx_align_speed));
-  
   reward_signal = find(bwareaopen(h.data.bh.reward>0.5,2));
-  h.data.idx_reward_signal = [0, reward_signal(find(diff(reward_signal)>1))];
+%    h.data.idx_reward_signal = [0, reward_signal(find(diff(reward_signal)>1))];
   
-  reward_pos = find((h.data.bh.pos+h.paras.pos_offset)<h.paras.reward_thr);
-  h.data.idx_reward_pos = [0, reward_pos(find(diff(reward_pos)>1))];
+%    reward_pos = find((h.data.bh.pos+h.paras.pos_offset)<h.paras.reward_thr);
+%    h.data.idx_reward_pos = [0, reward_pos(find(diff(reward_pos)>1))];
   
   
 function h = run_align(h)
@@ -288,130 +320,142 @@ function h = run_align(h)
   idx_align_pos = h.data.idx_align_pos(h.data.idx_align_pos_mask);
   idx_align_speed = h.data.idx_align_speed(h.data.idx_align_speed_mask);
   
-  while offset < h.data.bh.datapoints
-    n_loc = idx_align_pos(i)-idx_align_pos(i-1);
-    n_speed = idx_align_speed(i)-idx_align_speed(i-1);
-    %% check if distances of stopping periods are the same
-    
-    if n_loc~=n_speed   %% if not, resample location points and write to new position
-      loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
+  if get(h.radio_stops,'Value')
+    if length(idx_align_pos) > 1
       
-      trialpoint = [0,find(diff(loc_tmp)<-10),n_loc];
-      for t = 2:length(trialpoint)
+      while offset < h.data.bh.datapoints
+        n_loc = idx_align_pos(i)-idx_align_pos(i-1);
+        n_speed = idx_align_speed(i)-idx_align_speed(i-1);
+        %% check if distances of stopping periods are the same
         
-        n_points = trialpoint(t) - trialpoint(t-1);
-        loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
-        
-        if n_points > 5
-          idx1 = round(idx_align_speed(i-1)+1 + trialpoint(t-1)*(n_speed/n_loc));
-          idx2 = round(idx_align_speed(i-1)+1 + (trialpoint(t)-1)*(n_speed/n_loc));
+        if n_loc~=n_speed   %% if not, resample location points and write to new position
+          loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
           
-          n_fill = idx2-idx1+1;
-          
-          time_speed = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
-          time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
-          
-          h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
-          offset = offset + n_fill;
-          
-          fill_tmp = interp1(time_loc,loc_tmp_tp,time_speed);
-        else
-          h.data.pos_s(offset:offset+n_points-1) = loc_tmp_tp;
-          offset = offset + n_points;
-        end
-      end
-    
-    else      %% if they are, just write old to new data
-      loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
-      
-      trialpoint = [0,find(diff(loc_tmp)<-10),n_loc];
-      for t = 2:length(trialpoint)
-        
-        loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
-        
-        n_points = trialpoint(t) - trialpoint(t-1);
-        h.data.pos_s(offset:offset+n_points-1) = loc_tmp_tp;
-        offset = offset + n_points;
-        
-      end
-      
-    end
-    
-    %% if there is no stopping period after recording stops, assign remaining positions linearly
-    if i == length(idx_align_pos) || i == length(idx_align_speed) || offset > h.data.bh.datapoints
-      lbh = length(h.data.bh.pos);
-      n_speed = min(lbh - idx_align_speed(i),lbh - idx_align_pos(i));
-      
-      if n_speed > 0
-        h.data.pos_s(offset:offset+n_speed-1) = h.data.bh.pos(idx_align_pos(i)+1:idx_align_pos(i)+n_speed) + h.paras.pos_offset;
-      end
-      break
-    end
-    i = i+1;
-    
-  end
-  
-  h.data.pos_r = zeros(1,length(h.data.bh.pos));
-  if length(h.data.idx_reward_signal)>1 && length(h.data.idx_reward_pos)>1
-    
-    offset = 1;
-    i = 2;
-    while offset < h.data.bh.datapoints
-      n_pos = h.data.idx_reward_pos(i)-h.data.idx_reward_pos(i-1);
-      n_signal = h.data.idx_reward_signal(i)-h.data.idx_reward_signal(i-1);
-      
-      if n_pos~=n_signal   %% if not, resample location points and write to new position
-        loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
-        trialpoint = [0,find(diff(loc_tmp)<-10),n_pos];
-        for t = 2:length(trialpoint)
-          n_points = trialpoint(t) - trialpoint(t-1);
-          loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
-          
-          if n_points > 5
-            idx1 = round(h.data.idx_reward_signal(i-1)+1 + trialpoint(t-1)*(n_signal/n_pos));
-            idx2 = round(h.data.idx_reward_signal(i-1)+1 + (trialpoint(t)-1)*(n_signal/n_pos));
+          trialpoint = [0,find(diff(loc_tmp)<-10),n_loc];
+          for t = 2:length(trialpoint)
             
-            n_fill = idx2-idx1+1;
+            n_points = trialpoint(t) - trialpoint(t-1);
+            loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
             
-            time_signal = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
-            time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
-            
-            h.data.pos_r(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_signal);
-            offset = offset + n_fill;
-          else
-            h.data.pos_r(offset:offset+n_points-1) = loc_tmp_tp;
-            offset = offset + n_points;
+            if n_points > 5
+              idx1 = round(idx_align_speed(i-1)+1 + trialpoint(t-1)*(n_speed/n_loc));
+              idx2 = round(idx_align_speed(i-1)+1 + (trialpoint(t)-1)*(n_speed/n_loc));
+              
+              n_fill = idx2-idx1+1;
+              
+              time_speed = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
+              time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
+  %              disp('---')
+  %              size(time_loc)
+  %              size(loc_tmp_tp)
+  %              size(time_speed)
+              
+              h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
+              offset = offset + n_fill;
+              
+  %              fill_tmp = interp1(time_loc,loc_tmp_tp,time_speed);
+            else
+              h.data.pos_s(offset:offset+n_points-1) = loc_tmp_tp;
+              offset = offset + n_points;
+            end
           end
-        end
-      
-      else      %% if they are, just write old to new data
-        loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
         
-        trialpoint = [0,find(diff(loc_tmp)<-10),n_pos];
-        for t = 2:length(trialpoint)
-          loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+        else      %% if they are, just write old to new data
+          loc_tmp = h.data.bh.pos(idx_align_pos(i-1)+1:idx_align_pos(i)) + h.paras.pos_offset;
           
-          n_points = trialpoint(t) - trialpoint(t-1);
-          h.data.pos_r(offset:offset+n_points-1) = loc_tmp_tp;
-          offset = offset + n_points;
+          trialpoint = [0,find(diff(loc_tmp)<-10),n_loc];
+          for t = 2:length(trialpoint)
+            
+            loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+            
+            n_points = trialpoint(t) - trialpoint(t-1);
+            h.data.pos_s(offset:offset+n_points-1) = loc_tmp_tp;
+            offset = offset + n_points;
+            
+          end
           
         end
         
-%          h.data.pos_r(offset:offset+n_signal-1) = loc_tmp;
+        %% if there is no stopping period after recording stops, assign remaining positions linearly
+        if i == length(idx_align_pos) || i == length(idx_align_speed) || offset > h.data.bh.datapoints
+          lbh = length(h.data.bh.pos);
+          n_speed = min(lbh - idx_align_speed(i),lbh - idx_align_pos(i));
+          
+          if n_speed > 0
+            h.data.pos_s(offset:offset+n_speed-1) = h.data.bh.pos(idx_align_pos(i)+1:idx_align_pos(i)+n_speed) + h.paras.pos_offset;
+          end
+          break
+        end
+        i = i+1;
         
       end
-      
-      if i == length(h.data.idx_reward_pos) || i == length(h.data.idx_reward_signal) || offset > h.data.bh.datapoints
-        lbh = length(h.data.bh.pos);
-        n_signal = min(lbh - h.data.idx_reward_signal(i),lbh - h.data.idx_reward_pos(i));
-        
-        if n_signal > 0
-          h.data.pos_r(offset:offset+n_signal-1) = h.data.bh.pos(h.data.idx_reward_pos(i)+1:h.data.idx_reward_pos(i)+n_signal) + h.paras.pos_offset;
-        end
-        break
-      end
-      i = i+1;
+    else
+      h.data.pos_s = h.data.bh.pos + h.paras.pos_offset;
     end
+    h.data.pos_s = mod(h.data.pos_s,str2num(get(h.entry_tracklength,'string')));  
+%    else
+%      h.data.pos_r = zeros(1,length(h.data.bh.pos));
+%      if length(h.data.idx_reward_signal)>1 && length(h.data.idx_reward_pos)>1
+%        
+%        offset = 1;
+%        i = 2;
+%        while offset < h.data.bh.datapoints
+%          n_pos = h.data.idx_reward_pos(i)-h.data.idx_reward_pos(i-1);
+%          n_signal = h.data.idx_reward_signal(i)-h.data.idx_reward_signal(i-1);
+%          
+%          if n_pos~=n_signal   %% if not, resample location points and write to new position
+%            loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
+%            trialpoint = [0,find(diff(loc_tmp)<-10),n_pos];
+%            for t = 2:length(trialpoint)
+%              n_points = trialpoint(t) - trialpoint(t-1);
+%              loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+%              
+%              if n_points > 5
+%                idx1 = round(h.data.idx_reward_signal(i-1)+1 + trialpoint(t-1)*(n_signal/n_pos));
+%                idx2 = round(h.data.idx_reward_signal(i-1)+1 + (trialpoint(t)-1)*(n_signal/n_pos));
+%                
+%                n_fill = idx2-idx1+1;
+%                
+%                time_signal = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_fill);
+%                time_loc = linspace(h.data.bh.time(idx1),h.data.bh.time(idx2),n_points);
+%                
+%                h.data.pos_r(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_signal);
+%                offset = offset + n_fill;
+%              else
+%                h.data.pos_r(offset:offset+n_points-1) = loc_tmp_tp;
+%                offset = offset + n_points;
+%              end
+%            end
+%          
+%          else      %% if they are, just write old to new data
+%            loc_tmp = h.data.bh.pos(h.data.idx_reward_pos(i-1)+1:h.data.idx_reward_pos(i)) + h.paras.pos_offset;
+%            
+%            trialpoint = [0,find(diff(loc_tmp)<-10),n_pos];
+%            for t = 2:length(trialpoint)
+%              loc_tmp_tp = loc_tmp(trialpoint(t-1)+1:trialpoint(t));
+%              
+%              n_points = trialpoint(t) - trialpoint(t-1);
+%              h.data.pos_r(offset:offset+n_points-1) = loc_tmp_tp;
+%              offset = offset + n_points;
+%              
+%            end
+%            
+%    %          h.data.pos_r(offset:offset+n_signal-1) = loc_tmp;
+%            
+%          end
+%          
+%          if i == length(h.data.idx_reward_pos) || i == length(h.data.idx_reward_signal) || offset > h.data.bh.datapoints
+%            lbh = length(h.data.bh.pos);
+%            n_signal = min(lbh - h.data.idx_reward_signal(i),lbh - h.data.idx_reward_pos(i));
+%            
+%            if n_signal > 0
+%              h.data.pos_r(offset:offset+n_signal-1) = h.data.bh.pos(h.data.idx_reward_pos(i)+1:h.data.idx_reward_pos(i)+n_signal) + h.paras.pos_offset;
+%            end
+%            break
+%          end
+%          i = i+1;
+%        end
+%      end
   end
   
   
@@ -433,24 +477,31 @@ function h = plot_align(h)
     LS_s = '-';
     anchor_vis = 'on';
     err_s_vis = 'on';
-    LW_r = 0.5;
-    LS_r = '--';
-    err_r_vis = 'off';
+%      LW_r = 0.5;
+%      LS_r = '--';
+%      err_r_vis = 'off';
   else
     LW_s = 0.5;
     LS_s = '--';
     err_s_vis = 'off';
     anchor_vis = 'off';
-    LW_r = 2;
-    LS_r = '-';
-    err_r_vis = 'on';
+%      LW_r = 2;
+%      LS_r = '-';
+%      err_r_vis = 'on';
   end
   
   pos_tmp = h.data.pos_s*3*h.data.ymax/h.paras.ptlength;
-  h.pos = plot(h.ax,h.data.bh.time,pos_tmp,'k','Hittest','off','DisplayName','animal position (aligned)','LineStyle',LS_s,'LineWidth',LW_s);
+  if size(pos_tmp,2) ~= size(h.data.bh.time)
+    sz = min(size(pos_tmp,2),size(h.data.bh.time,2));
+  else
+    sz = size(pos_tmp,2);
+  end
+  h.pos = plot(h.ax,h.data.bh.time(1:sz),pos_tmp(1:sz),'k','Hittest','off','DisplayName','animal position (aligned)','LineStyle',LS_s,'LineWidth',LW_s);
   
-  pos_r_tmp = h.data.pos_r*3*h.data.ymax/h.paras.ptlength;
-  h.pos_r = plot(h.ax,h.data.bh.time,pos_r_tmp,'k','Hittest','off','DisplayName','animal position (aligned, TTL)','LineStyle',LS_r,'LineWidth',LW_r);
+%    if get(h.radio_TTL,'Value')
+%      pos_r_tmp = h.data.pos_r*3*h.data.ymax/h.paras.ptlength;
+%      h.pos_r = plot(h.ax,h.data.bh.time,pos_r_tmp,'k','Hittest','off','DisplayName','animal position (aligned, TTL)','LineStyle',LS_r,'LineWidth',LW_r);
+%    end
   
 %    h.pos0 = plot(h.ax,h.data.time,(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset)*3*h.data.ymax/h.paras.ptlength,'r--','Hittest','off','DisplayName','animal position');
   h.pos0 = plot(h.ax,h.data.bh.time,(h.data.bh.pos + h.paras.pos_offset)*3*h.data.ymax/h.paras.ptlength,'r--','Hittest','off','DisplayName','animal position');
@@ -494,35 +545,37 @@ function h = plot_align(h)
     plot(h.ax2,[h.data.duration, h.data.duration],[-5,5],'k--')
     ylim(h.ax2,[-5,5])
     ylabel(h.ax2,'diff. anchor points')
-  else
-    err_r_0 = h.data.pos_r(1:h.data.bh.datapoints)-h.data.pos_s(1:h.data.bh.datapoints);
-    err_r_0 = min([abs(err_r_0);abs(err_r_0-h.paras.pos_offset)])/(h.paras.pos_offset/100);
-    h.ax2_err = plot(h.ax2,h.data.time,err_r_0,'r');
-    err_ylim = max(10,max(imgaussfilt(err_r_0,10)));
-    ylim(h.ax2,[-err_ylim,err_ylim])
-    ylabel(h.ax2,'TTL vs stop')
+%    else
+%      err_r_0 = h.data.pos_r(1:h.data.bh.datapoints)-h.data.pos_s(1:h.data.bh.datapoints);
+%      err_r_0 = min([abs(err_r_0);abs(err_r_0-h.paras.pos_offset)])/(h.paras.ptlength/100);
+%      h.ax2_err = plot(h.ax2,h.data.time,err_r_0,'r');
+%      err_ylim = max(10,max(imgaussfilt(err_r_0,10)));
+%      ylim(h.ax2,[-err_ylim,err_ylim])
+%      ylabel(h.ax2,'TTL vs stop')
   end
   
   hold(h.ax2,'off')
   xlim(h.ax2,[0,min(600,h.data.bh.time(end))])
   
   err = h.data.pos_s(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
-  err = min([abs(err);abs(err-h.paras.pos_offset)])/(h.paras.pos_offset/100);
+  err = min([abs(err);abs(err-h.paras.pos_offset)])/(h.paras.ptlength/100);
   
-  err_r = h.data.pos_r(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
-  err_r = min([abs(err_r);abs(err_r-h.paras.pos_offset)])/(h.paras.pos_offset/100);
+%    if get(h.radio_TTL,'Value')
+%      err_r = h.data.pos_r(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
+%      err_r = min([abs(err_r);abs(err_r-h.paras.pos_offset)])/(h.paras.ptlength/100);
+%      h.err_r = plot(h.ax3,h.data.time(1:h.data.bh.datapoints),err_r,'k','LineStyle',LS_r,'LineWidth',LW_r);
+%    end
   
   hold(h.ax3,'on')
-  plot(h.ax3,[0,h.data.bh.time(end)],[0,0],'k:')
-  h.err = plot(h.ax3,h.data.time,err,'k','LineStyle',LS_s,'LineWidth',LW_s);
-  h.err_r = plot(h.ax3,h.data.time,err_r,'k','LineStyle',LS_r,'LineWidth',LW_r);
+  plot(h.ax3,[0,h.data.bh.time(h.data.bh.datapoints)],[0,0],'k:')
+  h.err = plot(h.ax3,h.data.time(1:h.data.bh.datapoints),err,'k','LineStyle',LS_s,'LineWidth',LW_s);
   
   err_ylim = max(10,max(imgaussfilt(err,10)));
   plot(h.ax3,[h.data.duration, h.data.duration],[-err_ylim,err_ylim],'k--')
   hold(h.ax3,'off')
-  xlim(h.ax3,[0,min(600,h.data.bh.time(end))])
+  xlim(h.ax3,[0,min(600,h.data.bh.time(h.data.bh.datapoints))])
   
-  ylim(h.ax3,[-err_ylim,err_ylim])
+  ylim(h.ax3,[0,err_ylim])
   xlabel(h.ax3,'time [s]')
   ylabel(h.ax3,'deviation [cm]')
   
@@ -537,21 +590,23 @@ function update_plot(h)
     LW_s = 2;
     LS_s = '-';
     anchor_vis = 'on';
-    LW_r = 0.5;
-    LS_r = '--';
+%      LW_r = 0.5;
+%      LS_r = '--';
   else
     LW_s = 0.5;
     LS_s = '--';
     anchor_vis = 'off';
-    LW_r = 2;
-    LS_r = '-';
+%      LW_r = 2;
+%      LS_r = '-';
   end
   
   pos_tmp = h.data.pos_s*3*h.data.ymax/h.paras.ptlength;
-  set(h.pos,'Ydata',pos_tmp,'LineStyle',LS_s,'LineWidth',LW_s)
-  
-  pos_r_tmp = h.data.pos_r*3*h.data.ymax/h.paras.ptlength;
-  set(h.pos_r,'Ydata',pos_r_tmp,'LineStyle',LS_r,'LineWidth',LW_r)
+  if size(pos_tmp,2) ~= size(h.data.bh.time)
+    sz = min(size(pos_tmp,2),size(h.data.bh.time,2));
+    set(h.pos,'Xdata',h.data.bh.time(1:sz),'Ydata',pos_tmp(1:sz),'LineStyle',LS_s,'LineWidth',LW_s)
+  else
+    set(h.pos,'Ydata',pos_tmp,'LineStyle',LS_s,'LineWidth',LW_s)
+  end
   
   set(h.scatter_pos0,'visible',anchor_vis)
   set(h.scatter_speed0,'visible',anchor_vis)
@@ -562,18 +617,21 @@ function update_plot(h)
   set(h.scatter_speed,'Xdata',h.data.bh.time(h.data.idx_align_speed(h.data.idx_align_speed_mask)+1))
   set(h.scatter_speed,'Ydata',-ones(1,sum(h.data.idx_align_speed_mask)),'visible',anchor_vis);
   
-  
-  
   err = h.data.pos_s(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
-  err = min([abs(err);abs(err-h.paras.pos_offset)])/(h.paras.pos_offset/100);
+  err = min([abs(err);abs(err-h.paras.pos_offset)])/(h.paras.ptlength/100);
   
-  err_r = h.data.pos_r(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
-  err_r = min([abs(err_r);abs(err_r-h.paras.pos_offset)])/(h.paras.pos_offset/100);
-  
-  
+%    if get(h.radio_TTL,'Value')
+%      pos_r_tmp = h.data.pos_r*3*h.data.ymax/h.paras.ptlength;
+%      set(h.pos_r,'Ydata',pos_r_tmp,'LineStyle',LS_r,'LineWidth',LW_r)
+%      
+%      err_r = h.data.pos_r(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
+%      err_r = min([abs(err_r);abs(err_r-h.paras.pos_offset)])/(h.paras.ptlength/100);
+%      
+%      set(h.err_r,'Ydata',err_r,'LineStyle',LS_r,'LineWidth',LW_r)
+%      
+%    end
   
   set(h.err,'Ydata',err,'LineStyle',LS_s,'LineWidth',LW_s)
-  set(h.err_r,'Ydata',err_r,'LineStyle',LS_r,'LineWidth',LW_r)
   
   err_ylim = max(10,max(imgaussfilt(err,10)));
   ylim(h.ax3,[-err_ylim,err_ylim])
@@ -594,16 +652,16 @@ function update_plot(h)
     set(h.ax2_err,'Xdata',h.data.bh.time)
     set(h.ax2_err,'Ydata',cum_diff)
     set(get(h.ax2,'YLabel'),'String','diff. anchor points')
-  else
-    err_r_0 = h.data.pos_r(1:h.data.bh.datapoints)-h.data.pos_s(1:h.data.bh.datapoints);
-    err_r_0 = min([abs(err_r_0);abs(err_r_0-h.paras.pos_offset)])/(h.paras.pos_offset/100);
-    
-    err_ylim = max(10,max(imgaussfilt(err_r_0,10)));
-    ylim(h.ax2,[-err_ylim,err_ylim])
-    
-    set(h.ax2_err,'Xdata',h.data.time)
-    set(h.ax2_err,'Ydata',err_r_0)
-    set(get(h.ax2,'YLabel'),'String','TTL vs stop')
+%    else
+%      err_r_0 = h.data.pos_r(1:h.data.bh.datapoints)-h.data.pos_s(1:h.data.bh.datapoints);
+%      err_r_0 = min([abs(err_r_0);abs(err_r_0-h.paras.pos_offset)])/(h.paras.pos_offset/100);
+%      
+%      err_ylim = max(10,max(imgaussfilt(err_r_0,10)));
+%      ylim(h.ax2,[-err_ylim,err_ylim])
+%      
+%      set(h.ax2_err,'Xdata',h.data.time)
+%      set(h.ax2_err,'Ydata',err_r_0)
+%      set(get(h.ax2,'YLabel'),'String','TTL vs stop')
   end
     
   
@@ -657,12 +715,10 @@ function button_reset_Callback(hObject, eventdata, h)
   
   h = set_paras(h);
   if h.nSessions
-    bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-    h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
+    h = get_BHFile(h);
+    h = read_bh_file(h,h.pathBHfile);
   else
-%      h.pathIn
-%      bhfile.name
-%      bhfile=dir(pathcat(h.pathIn,'*m.txt'));
+    h = get_BHFile(h);
     h = read_bh_file(h,h.pathIn);
   end
   
@@ -688,14 +744,17 @@ function save_data(h)
   
   alignedData = struct;
   
+  sz = size(h.data.time,2);
   if get(h.radio_stops,'Value')
-    alignedData.position = h.data.pos_s(1:h.data.bh.datapoints);            % position
-  else
-    alignedData.position = h.data.pos_r(1:h.data.bh.datapoints);
+    alignedData.position = h.data.pos_s(1:sz);            % position
+%    else
+%      alignedData.position = h.data.pos_r(1:sz);
   end
   alignedData.speed = h.data.speed;
   alignedData.time = h.data.time;        % time
   alignedData.frame = h.data.frame_num;
+  alignedData.datapoints = h.data.bh.datapoints;
+  alignedData.reward = h.data.bh.reward;
   
   alignedData.resampled = struct;
   
@@ -708,9 +767,9 @@ function save_data(h)
     if get(h.radio_stops,'Value')
       val_tmp = sort(h.data.pos_s(idx));
       alignedData.resampled.position(i) = val_tmp(round(length(val_tmp)/2));   % quasi median filtering (avoiding half values!)
-    else
-      val_tmp = sort(h.data.pos_r(idx));
-      alignedData.resampled.position(i) = val_tmp(round(length(val_tmp)/2));
+%      else
+%        val_tmp = sort(h.data.pos_r(idx));
+%        alignedData.resampled.position(i) = val_tmp(round(length(val_tmp)/2));
     end
     
     alignedData.resampled.speed(i) = mean(h.data.speed(idx));      % speed
@@ -719,7 +778,7 @@ function save_data(h)
   
   h.paras.binwidth = h.paras.ptlength/h.paras.nbin;
   alignedData.resampled.binpos = min(floor(alignedData.resampled.position/h.paras.binwidth)+1,h.paras.nbin);
-    
+  
   %% defining run epochs by finding super-threshold movement speed
   sm = ones(1,10+1);
   alignedData.resampled.runrest = imerode(imdilate(alignedData.resampled.speed >= h.paras.runthres,sm),sm);   %% filling holes of size up to 5 (=1/3 sec)
@@ -735,7 +794,11 @@ function save_data(h)
   
   [~,fileSave,~] = fileparts(h.pathBHfile);
   
-  pathSave = pathcat(h.pathSession,sprintf('%s_aligned.mat',fileSave));
+  if strcmp(fileSave(end-6:end),'aligned')
+    pathSave = pathcat(h.pathSession,sprintf('%s.mat',fileSave));
+  else
+    pathSave = pathcat(h.pathSession,sprintf('%s_aligned.mat',fileSave));
+  end
   save(pathSave,'alignedData','-v7.3')
   
   if get(h.checkbox_savefigure,'value')
@@ -789,13 +852,7 @@ function button_next_Callback(hObject, eventdata, h)
       set(h.button_previous,'enable','on')
     end
     h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
-    bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-    if isempty(bhfile)
-      [fileName, h.pathSession] = uigetfile ({'*.txt'},'Choose behavior file',h.pathSession);
-      h.pathBHfile = pathcat(h.pathSession,fileName);
-    else
-      h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
-    end
+    h = get_BHFile(h);
     h = read_bh_file(h,h.pathBHfile);
 %      h = read_bh_file(h,pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name));
     h = run_methods(h);
@@ -825,8 +882,8 @@ function button_previous_Callback(hObject, eventdata, h)
       set(h.button_previous,'enable','off')
     end
     h.pathSession = pathcat(h.pathIn,h.folders(h.currSession).name);
-    bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*m.txt'));
-    h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
+    bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*.txt'));
+    h = get_BHFile(h);
     h = read_bh_file(h,h.pathBHfile);
     h = run_methods(h);
     guidata(hObject,h);
