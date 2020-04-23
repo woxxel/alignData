@@ -34,7 +34,7 @@ function varargout = alignData(varargin)
 
 % Edit the above text to modify the response to help alignData
 
-% Last Modified by GUIDE v2.5 29-Jul-2018 12:57:25
+% Last Modified by GUIDE v2.5 06-Feb-2020 00:39:39
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 0;
@@ -84,7 +84,7 @@ function alignData_OpeningFcn(hObject, eventdata, h, varargin)
     end
     
     [folderName,fileName,extension] = fileparts(h.pathIn);
-    if strcmp(extension,'.txt') || strcmp(extension,'.mat')
+    if strcmp(extension,'m.txt') || strcmp(extension,'m.mat')
       h.folders.name = '';
       h.pathSession = folderName;
       h.pathBHfile = h.pathIn;
@@ -127,8 +127,8 @@ function h = get_BHFile(h)
   
   if h.nSessions
     bhfile=dir(pathcat(h.pathIn,h.folders(h.currSession).name,'*.txt'));
-    if isempty(bhfile)
-      [fileName, h.pathSession] = uigetfile ({'*.txt'},'Choose behavior file',h.pathSession);
+    if isempty(bhfile) || length(bhfile) > 1
+      [fileName, h.pathSession] = uigetfile ({'*m.txt'},'Choose behavior file',h.pathSession);
       h.pathBHfile = pathcat(h.pathSession,fileName);
     else
       h.pathBHfile = pathcat(h.pathIn,h.folders(h.currSession).name,bhfile.name);
@@ -174,7 +174,7 @@ function h = set_paras(h)
   %% procession of behavioural data
   h.paras.runthres = 0.5;                            %% threshold to define active / inactive periods (cm/sec)
   h.paras.lr_min = 30;                             %% number of minimal frames considered to be a "long run"-event
-  h.paras.nbin = 80;                                 %% number of divisions of the linear track
+  h.paras.nbin = 100;                                 %% number of divisions of the linear track
   
   h.paras.cols = 8;
   
@@ -349,8 +349,11 @@ function h = run_align(h)
   %              size(time_loc)
   %              size(loc_tmp_tp)
   %              size(time_speed)
-              
-              h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
+              if n_fill > 1
+                h.data.pos_s(offset:offset+n_fill-1) = interp1(time_loc,loc_tmp_tp,time_speed);
+              else
+                h.data.pos_s(offset) = nanmedian(loc_tmp_tp);
+              end
               offset = offset + n_fill;
               
   %              fill_tmp = interp1(time_loc,loc_tmp_tp,time_speed);
@@ -523,7 +526,7 @@ function h = plot_align(h)
   yticks(h.ax,[-h.data.ymax,0,h.data.ymax])
   yticklabels(h.ax,[h.data.ymax,0,1])
   ylabel(h.ax,'Position')
-  xlim(h.ax,[0,min(600,h.data.bh.time(end))])
+  xlim(h.ax,[0,min(620,h.data.bh.time(end))])
   
   set(h.ax,'ButtonDownFcn',{@remove_align_point,h.ax},'Hittest','on','PickableParts','All');
   legend(h.ax,[h.pos0,h.pos,h.reward,h.gate,h.scatter_pos,h.scatter_speed],'location','SouthWest');
@@ -555,7 +558,7 @@ function h = plot_align(h)
   end
   
   hold(h.ax2,'off')
-  xlim(h.ax2,[0,min(600,h.data.bh.time(end))])
+  xlim(h.ax2,[0,min(620,h.data.bh.time(end))])
   
   err = h.data.pos_s(1:h.data.bh.datapoints)-(h.data.bh.pos(1:h.data.bh.datapoints) + h.paras.pos_offset);
   err = min([abs(err);abs(err-h.paras.pos_offset)])/(h.paras.ptlength/100);
@@ -573,7 +576,7 @@ function h = plot_align(h)
   err_ylim = max(10,max(imgaussfilt(err,10)));
   plot(h.ax3,[h.data.duration, h.data.duration],[-err_ylim,err_ylim],'k--')
   hold(h.ax3,'off')
-  xlim(h.ax3,[0,min(600,h.data.bh.time(h.data.bh.datapoints))])
+  xlim(h.ax3,[0,min(620,h.data.bh.time(end))])
   
   ylim(h.ax3,[0,err_ylim])
   xlabel(h.ax3,'time [s]')
@@ -1079,3 +1082,26 @@ function radio_stops_Callback(hObject, eventdata, h)
   
   set(h.radio_TTL,'Value',~get(h.radio_TTL,'Value'))
   update_plot(h)
+
+
+
+function entry_bins_Callback(hObject, eventdata, handles)
+% hObject    handle to entry_bins (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of entry_bins as text
+%        str2double(get(hObject,'String')) returns contents of entry_bins as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function entry_bins_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to entry_bins (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
